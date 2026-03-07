@@ -4,7 +4,7 @@
 ### AnyKernel setup
 # begin properties
 properties() { '
-kernel.string=MoonWake Kernel @ Github
+kernel.string=Eclipse Kernel
 do.devicecheck=0
 do.modules=0
 do.systemless=0
