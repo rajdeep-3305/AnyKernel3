@@ -4,7 +4,7 @@
 ### AnyKernel setup
 # begin properties
 properties() { '
-kernel.string=Eclipse Kernel
+kernel.string=Megumi Kernel // Casanova.
 do.devicecheck=0
 do.modules=0
 do.systemless=0
