@@ -4,7 +4,7 @@
 ### AnyKernel setup
 # begin properties
 properties() { '
-kernel.string=Eclipse Kernel
+kernel.string=Ecstacy Kernel by Casanova
 do.devicecheck=0
 do.modules=0
 do.systemless=0
@@ -32,7 +32,9 @@ patch_vbmeta_flag=auto;
 . tools/ak3-core.sh && attributes;
 
 # boot install
+ui_print "Reading the current boot image...";
 dump_boot; # use split_boot to skip ramdisk unpack, e.g. for devices with init_boot ramdisk
 
+ui_print "Rebuilding the boot image...";
 write_boot; # use flash_boot to skip ramdisk repack, e.g. for devices with init_boot ramdisk
 ## end boot install

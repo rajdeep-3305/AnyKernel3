@@ -16,8 +16,7 @@ split_img=$home/split_img;
 # ui_print "<text>" [...]
 ui_print() {
   until [ ! "$1" ]; do
-    echo "ui_print $1
-      ui_print" >> /proc/self/fd/$OUTFD;
+    printf 'ui_print %s\nui_print\n' "$1" >> "/proc/self/fd/$OUTFD";
     shift;
   done;
 }
@@ -69,7 +68,7 @@ split_boot() {
   local dumpfail;
 
   if [ ! -e "$(echo $block | cut -d\  -f1)" ]; then
-    abort "Invalid partition. Aborting...";
+    abort "Boot partition is unavailable.";
   fi;
   if [ "$(echo $block | grep ' ')" ]; then
     block=$(echo $block | cut -d\  -f1);
@@ -135,7 +134,7 @@ split_boot() {
   fi;
 
   if [ $? != 0 -o "$dumpfail" ]; then
-    abort "Dumping/splitting image failed. Aborting...";
+    abort "Could not read or unpack the boot image.";
   fi;
   cd $home;
 }
@@ -156,7 +155,7 @@ unpack_ramdisk() {
   if [ -f ramdisk.cpio ]; then
     comp=$($bin/magiskboot decompress ramdisk.cpio 2>&1 | grep -v 'raw' | sed -n 's;.*\[\(.*\)\];\1;p');
   else
-    abort "No ramdisk found to unpack. Aborting...";
+    abort "The boot image has no ramdisk to unpack.";
   fi;
   if [ "$comp" ]; then
     mv -f ramdisk.cpio ramdisk.cpio.$comp;
@@ -174,7 +173,7 @@ unpack_ramdisk() {
   cd $ramdisk;
   EXTRACT_UNSAFE_SYMLINKS=1 cpio -d -F $split_img/ramdisk.cpio -i;
   if [ $? != 0 -o ! "$(ls)" ]; then
-    abort "Unpacking ramdisk failed. Aborting...";
+    abort "Could not unpack the boot ramdisk.";
   fi;
   if [ -d "$home/rdtmp" ]; then
     cp -af $home/rdtmp/* .;
@@ -225,7 +224,7 @@ repack_ramdisk() {
     fi;
   fi;
   if [ "$packfail" ]; then
-    abort "Repacking ramdisk failed. Aborting...";
+    abort "Could not rebuild the boot ramdisk.";
   fi;
 
   if [ -f "$bin/mkmtkhdr" -a -f "$split_img/boot.img-base" ]; then
@@ -320,7 +319,7 @@ flash_boot() {
           magisk_patched=$?;
         fi;
         if [ $((magisk_patched & 3)) -eq 1 ]; then
-          ui_print " " "Magisk detected! Patching kernel so reflashing Magisk is not necessary...";
+          ui_print " " "Magisk detected. Preserving root...";
           comp=$($bin/magiskboot decompress kernel 2>&1 | grep -vE 'raw|zimage' | sed -n 's;.*\[\(.*\)\];\1;p');
           ($bin/magiskboot split $kernel || $bin/magiskboot decompress $kernel kernel) 2>/dev/null;
           if [ $? != 0 -a "$comp" ] && $comp --help 2>/dev/null; then
@@ -346,7 +345,7 @@ flash_boot() {
             [ -f $fdt ] && $bin/magiskboot dtb $fdt patch; # remove dtb verity/avb
           done;
         elif [ -d /data/data/me.weishu.kernelsu ] && [ "$(file_getprop $home/anykernel.sh do.modules)" == 1 ] && [ "$(file_getprop $home/anykernel.sh do.systemless)" == 1 ]; then
-          ui_print " " "KernelSU detected! Setting up for kernel helper module...";
+          ui_print " " "KernelSU detected. Setting up module support...";
           comp=$($bin/magiskboot decompress kernel 2>&1 | grep -vE 'raw|zimage' | sed -n 's;.*\[\(.*\)\];\1;p');
           ($bin/magiskboot split $kernel || $bin/magiskboot decompress $kernel kernel) 2>/dev/null;
           if [ $? != 0 -a "$comp" ] && $comp --help 2>/dev/null; then
@@ -357,7 +356,7 @@ flash_boot() {
             touch $home/kernelsu_patched;
             strings kernel 2>/dev/null | grep -E -m1 'Linux version.*#' > $home/vertmp;
           else
-            ui_print " " "Warning: No KernelSU support detected in kernel!";
+            ui_print " " "Warning: No KernelSU support in this image.";
           fi;
           if [ "$comp" ]; then
             $bin/magiskboot compress=$comp kernel kernel.$comp;
@@ -387,7 +386,7 @@ flash_boot() {
     unset PATCHVBMETAFLAG;
   fi;
   if [ $? != 0 ]; then
-    abort "Repacking image failed. Aborting...";
+    abort "Could not rebuild the boot image.";
   fi;
   [ -f .magisk ] && touch $home/magisk_patched;
 
@@ -412,15 +411,16 @@ flash_boot() {
     fi;
   fi;
   if [ $? != 0 -o "$signfail" ]; then
-    abort "Signing image failed. Aborting...";
+    abort "Could not sign the boot image.";
   fi;
   mv -f boot-new-signed.img boot-new.img 2>/dev/null;
 
   if [ ! -f boot-new.img ]; then
-    abort "No repacked image found to flash. Aborting...";
+    abort "The rebuilt boot image is missing.";
   elif [ "$(wc -c < boot-new.img)" -gt "$(wc -c < boot.img)" ]; then
-    abort "New image larger than target partition. Aborting...";
+    abort "Boot image exceeds the partition size.";
   fi;
+  ui_print "Writing ${block##*/}...";
   blockdev --setrw $block 2>/dev/null;
   if [ -f "$bin/flash_erase" -a -f "$bin/nandwrite" ]; then
     $bin/flash_erase $block 0 0;
@@ -432,7 +432,7 @@ flash_boot() {
     cat boot-new.img /dev/zero > $block 2>/dev/null || true;
   fi;
   if [ $? != 0 ]; then
-    abort "Flashing image failed. Aborting...";
+    abort "Could not write the boot image.";
   fi;
 }
 
@@ -459,9 +459,6 @@ flash_generic() {
     done;
     if [ ! "$imgblock" ]; then
       abort "$1 partition could not be found. Aborting...";
-    fi;
-    if [ ! "$no_block_display" ]; then
-      ui_print " " "$imgblock";
     fi;
     if [ "$path" == "/dev/block/mapper" ]; then
       avb=$($bin/httools_static avb $1);
@@ -517,6 +514,10 @@ flash_generic() {
       fi
     elif [ "$(wc -c < $img)" -gt "$(wc -c < $imgblock)" ]; then
       abort "New $1 image larger than $1 partition. Aborting...";
+    fi;
+    if [ ! "$no_block_display" ]; then
+      ui_print "Writing ${imgblock##*/}...";
+      printf 'Target block device: %s\n' "$imgblock" >&2;
     fi;
     isro=$(blockdev --getro $imgblock 2>/dev/null);
     blockdev --setrw $imgblock 2>/dev/null;
@@ -814,7 +815,7 @@ setup_ak() {
         esac;
       fi;
       if [ ! "$slot" -a "$is_slot_device" == 1 ]; then
-        abort "Unable to determine active slot. Aborting...";
+        abort "Could not determine the active boot slot.";
       fi;
     ;;
   esac;
@@ -910,10 +911,11 @@ setup_ak() {
   if [ "$target" ]; then
     block=$(ls $target 2>/dev/null);
   else
-    abort "Unable to determine $block partition. Aborting...";
+    abort "Could not find the $block partition.";
   fi;
   if [ ! "$no_block_display" ]; then
-    ui_print "$block";
+    ui_print "Target partition: ${block##*/}";
+    printf 'Target block device: %s\n' "$block" >&2;
   fi;
 }
 ###
